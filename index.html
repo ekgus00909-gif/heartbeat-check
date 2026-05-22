@@ -13,29 +13,33 @@
     <!-- Chart.js for Health Trends -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* 모바일 터치 오버스크롤 방지 및 스무스 스크롤 */
         body {
             -webkit-tap-highlight-color: transparent;
             overscroll-behavior-y: contain;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         }
-        /* 심전도 애니메이션용 스타일 */
         .pulse-heart {
             animation: heartBeat 1s infinite;
         }
         @keyframes heartBeat {
             0% { transform: scale(1); }
-            14% { transform: scale(1.15); }
+            14% { transform: scale(1.12); }
             28% { transform: scale(1); }
-            42% { transform: scale(1.15); }
+            42% { transform: scale(1.12); }
             70% { transform: scale(1); }
         }
-        /* 그라데이션 및 부드러운 전환 효과 */
         .glow-red {
-            box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
         }
         .glow-green {
-            box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+        }
+        /* 숨겨진 비디오 요소 */
+        #webcamVideo {
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            position: absolute;
         }
     </style>
 </head>
@@ -49,11 +53,15 @@
             </div>
             <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-red-500 to-rose-400 bg-clip-text text-transparent">HeartBeat Pro</span>
         </div>
-        <div id="connectionStatus" class="flex items-center space-x-1 bg-emerald-500/10 text-emerald-400 text-xs px-2.5 py-1 rounded-full border border-emerald-500/20">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping mr-1"></span>
-            센서 대기 완료
+        <div id="connectionStatus" class="flex items-center space-x-1 bg-amber-500/10 text-amber-400 text-xs px-2.5 py-1 rounded-full border border-amber-500/20">
+            <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse mr-1" id="statusDot"></span>
+            <span id="statusLabel">카메라 권한 필요</span>
         </div>
     </header>
+
+    <!-- 실시간 처리를 위한 숨겨진 캔버스와 비디오 -->
+    <video id="webcamVideo" autoplay playsinline muted></video>
+    <canvas id="hiddenCanvas" class="hidden" width="30" height="30"></canvas>
 
     <!-- 메인 컨텐츠 영역 -->
     <main class="flex-1 overflow-y-auto pb-24 px-4 pt-4 max-w-md mx-auto w-full">
@@ -61,51 +69,24 @@
         <!-- 탭 1: 측정 화면 (기본 활성화) -->
         <section id="tab-measure" class="space-y-6">
             
-            <!-- 데모 체험 모드 가이드 패널 -->
-            <div class="bg-slate-900 border border-indigo-500/30 rounded-2xl p-4 space-y-3 shadow-lg shadow-indigo-950/20">
-                <div class="flex items-center space-x-2 text-indigo-400">
-                    <i data-lucide="sparkles" class="w-4 h-4"></i>
-                    <h4 class="text-xs font-bold uppercase tracking-wider">스마트 데모 시뮬레이터</h4>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">
-                    실제 손가락을 대지 않아도 아래의 신체 상태 버튼을 터치하면 상황별 최적의 심전도 파형과 심박 반응 속도를 자동으로 시뮬레이션합니다.
-                </p>
-                <div class="grid grid-cols-2 gap-2">
-                    <button onclick="runDemoPreset(52, '기상 직후')" class="flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-xl bg-slate-950 hover:bg-indigo-950/50 border border-slate-800 hover:border-indigo-500/40 text-xs transition-all active:scale-95">
-                        <span class="text-blue-400">💤</span>
-                        <span class="font-medium text-slate-300">깊은 수면 (52)</span>
-                    </button>
-                    <button onclick="runDemoPreset(72, '휴식 중')" class="flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-xl bg-slate-950 hover:bg-indigo-950/50 border border-slate-800 hover:border-indigo-500/40 text-xs transition-all active:scale-95">
-                        <span class="text-emerald-400">🧘</span>
-                        <span class="font-medium text-slate-300">일상 안정 (72)</span>
-                    </button>
-                    <button onclick="runDemoPreset(105, '흥분/긴장')" class="flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-xl bg-slate-950 hover:bg-indigo-950/50 border border-slate-800 hover:border-indigo-500/40 text-xs transition-all active:scale-95">
-                        <span class="text-amber-400">🎮</span>
-                        <span class="font-medium text-slate-300">짜릿한 게임 (105)</span>
-                    </button>
-                    <button onclick="runDemoPreset(145, '운동 후')" class="flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-xl bg-slate-950 hover:bg-indigo-950/50 border border-slate-800 hover:border-indigo-500/40 text-xs transition-all active:scale-95">
-                        <span class="text-rose-400">🏃</span>
-                        <span class="font-medium text-slate-300">고강도 운동 (145)</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- 시뮬레이션 카메라 가이드 박스 -->
+            <!-- 카메라 작동 안내 & 실시간 프리뷰 영역 -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center space-x-4">
-                <div class="relative w-16 h-16 rounded-xl bg-slate-800 border-2 border-red-500/30 flex items-center justify-center overflow-hidden shrink-0" id="cameraPreview">
-                    <div id="cameraFlash" class="absolute inset-0 bg-red-600/10 transition-colors duration-300"></div>
-                    <i data-lucide="fingerprint" class="w-8 h-8 text-red-500 relative z-10 animate-pulse"></i>
+                <div class="relative w-16 h-16 rounded-xl bg-slate-950 border-2 border-red-500/30 flex items-center justify-center overflow-hidden shrink-0">
+                    <!-- 실제 모바일 카메라 화면을 동그랗게 아주 작게 보여줌 (정확한 손가락 위치 확인용) -->
+                    <video id="miniPreview" class="absolute inset-0 w-full h-full object-cover transform scale-150 rounded-lg" autoplay playsinline muted></video>
+                    <div id="cameraFlash" class="absolute inset-0 bg-red-600/25 transition-colors duration-300"></div>
+                    <i data-lucide="fingerprint" id="fingerprintIcon" class="w-8 h-8 text-red-500 relative z-10 animate-pulse"></i>
                 </div>
                 <div class="flex-1">
-                    <h4 class="text-sm font-semibold text-slate-200">카메라/플래시 측정 방식</h4>
-                    <p class="text-xs text-slate-400 mt-1 leading-relaxed">스마트폰 카메라 렌즈에 손가락 끝을 살포시 올려놓고 플래시 불빛이 손가락을 통과하도록 유지해 주세요.</p>
+                    <h4 class="text-sm font-semibold text-slate-200" id="cameraMethodTitle">실시간 카메라 혈류 감지</h4>
+                    <p class="text-xs text-slate-400 mt-1 leading-relaxed" id="cameraMethodDesc">뒷면 카메라 렌즈 위에 손가락을 올리면 모세혈관의 밝기 변화를 감지해 진짜 심박수를 계산합니다.</p>
                 </div>
             </div>
 
             <!-- 메인 측정기 플레이트 -->
             <div class="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 relative overflow-hidden backdrop-blur-sm">
                 <div class="absolute top-0 right-0 p-3">
-                    <span id="stateBadge" class="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs px-2.5 py-1 rounded-md font-medium">안정 상태</span>
+                    <span id="stateBadge" class="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs px-2.5 py-1 rounded-md font-medium">대기 중</span>
                 </div>
 
                 <!-- 심장 맥박 및 중앙 정보 -->
@@ -123,7 +104,7 @@
                             <span id="bpmValue" class="text-6xl font-extrabold text-slate-300 tracking-tighter">--</span>
                             <span class="text-lg font-semibold text-slate-500">BPM</span>
                         </div>
-                        <p id="statusMsg" class="text-xs text-slate-400 mt-1">심박을 감지하려면 하트를 탭하거나 위 데모를 누르세요</p>
+                        <p id="statusMsg" class="text-xs text-slate-400 mt-1">심박을 감지하려면 [측정 시작]을 누르세요</p>
                     </div>
                 </div>
 
@@ -132,7 +113,7 @@
                     <canvas id="ecgCanvas" class="w-full h-full"></canvas>
                     <div class="absolute top-2 left-3 flex items-center space-x-1.5">
                         <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
-                        <span class="text-[10px] font-mono text-red-400 uppercase tracking-wider">실시간 ECG 파형</span>
+                        <span class="text-[10px] font-mono text-red-400 uppercase tracking-wider">실시간 혈류 신호 (PPG)</span>
                     </div>
                 </div>
 
@@ -148,19 +129,31 @@
                 </div>
             </div>
 
-            <!-- 자가 설정 패널 (수동 가상 심박 세팅) -->
-            <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4">
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-sm font-semibold text-slate-300">수동 속도 조정</h3>
-                    <span id="rangeLabel" class="text-xs font-mono text-slate-400">보통 (72 BPM)</span>
+            <!-- 가상 시뮬레이션 테스트를 원할 때 쓸 수 있는 데모 기기 패널 -->
+            <div class="bg-slate-900/40 border border-indigo-500/20 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center space-x-2 text-indigo-400">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    <h4 class="text-xs font-bold uppercase tracking-wider">가상 시뮬레이션 데모 모드</h4>
                 </div>
-                <input type="range" id="bpmSlider" min="40" max="180" value="72" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-red-500">
-                <div class="flex justify-between text-[10px] text-slate-500 mt-2">
-                    <span>수면/안정 (40)</span>
-                    <span>보통 (70-80)</span>
-                    <span>고강도 운동 (180)</span>
+                <p class="text-[11px] text-slate-400 leading-relaxed">
+                    PC웹 환경 등으로 카메라 피드를 손가락으로 가릴 수 없는 경우, 아래 프리셋을 눌러 즉각 가상 측정을 시작하고 체험할 수 있습니다.
+                </p>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="runDemoPreset(55, '기상 직후')" class="flex items-center justify-center space-x-1.5 py-2 px-2 border border-slate-800 hover:border-indigo-500/40 bg-slate-950/80 rounded-xl text-[11px] text-slate-300 transition-all active:scale-95">
+                        <span>💤 수면 (55)</span>
+                    </button>
+                    <button onclick="runDemoPreset(72, '휴식 중')" class="flex items-center justify-center space-x-1.5 py-2 px-2 border border-slate-800 hover:border-indigo-500/40 bg-slate-950/80 rounded-xl text-[11px] text-slate-300 transition-all active:scale-95">
+                        <span>🧘 안정 (72)</span>
+                    </button>
+                    <button onclick="runDemoPreset(105, '흥분/긴장')" class="flex items-center justify-center space-x-1.5 py-2 px-2 border border-slate-800 hover:border-indigo-500/40 bg-slate-950/80 rounded-xl text-[11px] text-slate-300 transition-all active:scale-95">
+                        <span>🎮 흥분 (105)</span>
+                    </button>
+                    <button onclick="runDemoPreset(140, '운동 후')" class="flex items-center justify-center space-x-1.5 py-2 px-2 border border-slate-800 hover:border-indigo-500/40 bg-slate-950/80 rounded-xl text-[11px] text-slate-300 transition-all active:scale-95">
+                        <span>🏃 운동 (140)</span>
+                    </button>
                 </div>
             </div>
+
         </section>
 
         <!-- 탭 2: 대시보드 및 통계 화면 -->
@@ -209,7 +202,6 @@
                     </button>
                 </div>
                 <div id="historyList" class="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    <!-- 기록 동적 생성 위치 -->
                     <div class="text-center py-6 text-xs text-slate-500">저장된 심박 기록이 없습니다.</div>
                 </div>
             </div>
@@ -271,7 +263,7 @@
                         <span class="text-amber-500">빈맥 (심박 상승)</span>
                         <span class="text-slate-300">100 BPM 초과</span>
                     </div>
-                    <p class="text-[10px] text-slate-500 leading-relaxed pt-1">※ 본 측정 결과는 참고용이며 의학적 조언을 대체할 수 없습니다. 통증이나 이상 징후가 있을 경우 의료 전문가와 상담하시기 바랍니다.</p>
+                    <p class="text-[10px] text-slate-500 leading-relaxed pt-1">※ 본 측정 결과는 참고용이며 의학적 조언을 대체할 수 없습니다. 가슴 통증이나 신체에 이상 징후가 느껴질 경우 즉시 가까운 병원을 찾아 전문의의 도움을 받으세요.</p>
                 </div>
             </div>
         </section>
@@ -331,12 +323,28 @@
 
         // 글로벌 변수 및 데이터 상태
         let isMeasuring = false;
+        let isDemoMode = false;
         let measurementProgress = 0;
         let measureInterval = null;
         let animationFrameId = null;
-        let lastBpm = 72; // 디폴트 시뮬레이션 기본 심박수
+        let lastBpm = 72; // 디폴트/가상 시뮬레이션 기본 심박수
         let records = JSON.parse(localStorage.getItem('heart_records')) || [];
         let demoAutoTag = "휴식 중"; // 데모용 태그 기록 저장용
+
+        // 카메라 영상 처리 관련 변수
+        let streamActive = false;
+        let localStream = null;
+        const webcamVideo = document.getElementById('webcamVideo');
+        const miniPreview = document.getElementById('miniPreview');
+        const hiddenCanvas = document.getElementById('hiddenCanvas');
+        const hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
+
+        // PPG 알고리즘 신호 변수
+        let smoothedValue = 128;
+        let dcValue = 128;
+        let lastBeatTime = 0;
+        let bpmList = [];
+        let consecutiveNoFingerCount = 0;
 
         // ECG 그리기 관련 설정
         const canvas = document.getElementById('ecgCanvas');
@@ -359,6 +367,7 @@
             drawStaticEcg();
             updateHistoryUI();
             initChart();
+            requestCameraSetup(); // 페이지 시작시 권한 요청 시도
         });
 
         window.addEventListener('resize', () => {
@@ -378,15 +387,11 @@
 
         // 탭 전환 기능
         function switchTab(tabId) {
-            // 모든 탭 숨기기
             document.getElementById('tab-measure').classList.add('hidden');
             document.getElementById('tab-dashboard').classList.add('hidden');
             document.getElementById('tab-relax').classList.add('hidden');
-
-            // 대상 탭 보이기
             document.getElementById(`tab-${tabId}`).classList.remove('hidden');
 
-            // 하단 내비게이션 아이콘 활성화 스타일 리셋
             const tabs = ['measure', 'dashboard', 'relax'];
             tabs.forEach(t => {
                 const navBtn = document.getElementById(`nav-${t}`);
@@ -400,13 +405,63 @@
                 }
             });
 
-            // 탭별 추가 기능 트리거
             if (tabId === 'dashboard') {
                 updateChart();
             }
         }
 
-        // 슬라이더 변경 감지
+        // 카메라 초기 셋업
+        async function requestCameraSetup() {
+            const statusLabel = document.getElementById('statusLabel');
+            const statusDot = document.getElementById('statusDot');
+            const connectionStatus = document.getElementById('connectionStatus');
+
+            try {
+                // 후면 카메라 우선 요구 및 권한 신청
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 100 },
+                        height: { ideal: 100 }
+                    }
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                localStream = stream;
+                webcamVideo.srcObject = stream;
+                miniPreview.srcObject = stream;
+                streamActive = true;
+
+                // 성공 상태 표시 변경
+                statusLabel.textContent = "센서 준비 완료";
+                connectionStatus.className = "flex items-center space-x-1 bg-emerald-500/10 text-emerald-400 text-xs px-2.5 py-1 rounded-full border border-emerald-500/20";
+                statusDot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-ping mr-1";
+                
+                // 가이드 텍스트 업데이트
+                document.getElementById('cameraMethodTitle').textContent = "실시간 손가락 진동 감지 센서";
+                document.getElementById('cameraMethodDesc').textContent = "후면 렌즈에 검지 손가락을 얹어주세요. 붉은 혈액 흐름이 포착되면 실시간으로 측정이 시작됩니다.";
+                
+                // 후면 플래시(Torch)가 사용 가능한 기기면 자동 토치 제어 기능 시도용 정보 셋업
+                const videoTrack = stream.getVideoTracks()[0];
+                const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+                if (capabilities.torch) {
+                    // 토치 사용 가능
+                    console.log("Torch control is supported");
+                }
+
+            } catch (err) {
+                console.warn("Camera access denied or unavailable", err);
+                // 실패 시 가상 데모 이용 권장으로 표기 변경
+                statusLabel.textContent = "시뮬레이션 모드";
+                connectionStatus.className = "flex items-center space-x-1 bg-indigo-500/10 text-indigo-400 text-xs px-2.5 py-1 rounded-full border border-indigo-500/20";
+                statusDot.className = "w-2 h-2 rounded-full bg-indigo-500 mr-1";
+                
+                document.getElementById('cameraMethodTitle').textContent = "가상 심박 감지 작동 (데모)";
+                document.getElementById('cameraMethodDesc').textContent = "브라우저 카메라 권한이 승인되지 않았거나 PC 환경입니다. 가상 시뮬레이션 데모 기능을 사용하세요.";
+            }
+        }
+
+        // 수동 제어 슬라이더
         const bpmSlider = document.getElementById('bpmSlider');
         const rangeLabel = document.getElementById('rangeLabel');
         bpmSlider.addEventListener('input', (e) => {
@@ -419,24 +474,23 @@
             updateStateBadge(bpm);
         });
 
-        // 데모 프리셋 원클릭 시동 함수
+        // 데모 프리셋 원클릭 시동 함수 (카메라를 대지 않고 데모 시뮬레이션으로 전환)
         function runDemoPreset(targetBpm, stateTag) {
             if (isMeasuring) {
                 stopMeasurement(false);
             }
-            // 슬라이더 및 타겟 심박 조정
+            isDemoMode = true;
             bpmSlider.value = targetBpm;
             lastBpm = targetBpm;
             demoAutoTag = stateTag;
 
-            // 상태 표시 레이블 및 배지 업데이트
             let rangeText = "보통";
             if (targetBpm < 60) rangeText = "휴식/서맥";
             else if (targetBpm > 100) rangeText = "활동/빈맥";
             rangeLabel.textContent = `${rangeText} (${targetBpm} BPM)`;
             updateStateBadge(targetBpm);
 
-            // 측정 시작
+            // 가상 측정 모드로 가동
             startMeasurement();
         }
 
@@ -467,18 +521,13 @@
             ctx.stroke();
         }
 
-        // 심박동 ECG 신호 시뮬레이션 생성자
-        function generateEcgPoint(index, bpm) {
-            // 심박 속도에 맞춰 한 주기의 주기를 유동적으로 조절
-            // 72 BPM 기준 약 80 프레임
+        // 심박동 ECG 신호 시뮬레이션 생성기 (데모/가상 모드 전용)
+        function generateDemoEcgPoint(index, bpm) {
             const baseFrequency = Math.max(40, Math.min(180, bpm));
             const cycleLength = Math.max(35, Math.floor(5760 / baseFrequency)); 
             const cycleIndex = index % cycleLength; 
             
-            // 기본 기저선
             let y = 0;
-            
-            // 유동적 주기에 맞춰 P-Q-R-S-T 포인트 매핑
             const pStart = Math.floor(cycleLength * 0.12);
             const qStart = Math.floor(cycleLength * 0.22);
             const rStart = Math.floor(cycleLength * 0.26);
@@ -487,30 +536,166 @@
             const tEnd = Math.floor(cycleLength * 0.58);
 
             if (cycleIndex >= pStart && cycleIndex < qStart) {
-                // P파 (작은 완만한 상승)
                 const pProgress = (cycleIndex - pStart) / (qStart - pStart);
                 y = -3.5 * Math.sin(pProgress * Math.PI);
             } else if (cycleIndex === rStart - 1) {
-                // Q파 (살짝 하강)
                 y = 5;
             } else if (cycleIndex === rStart) {
-                // R파 (가장 가파르고 높은 수축기 상승)
                 y = -38;
             } else if (cycleIndex === rStart + 1) {
-                // S파 (깊은 이완기 하강)
                 y = 10;
             } else if (cycleIndex >= tStart && cycleIndex < tEnd) {
-                // T파 (완만한 회복기 상승)
                 const tProgress = (cycleIndex - tStart) / (tEnd - tStart);
                 y = -7 * Math.sin(tProgress * Math.PI);
             }
-            
             return y;
         }
 
-        // 동적 ECG 파형 애니메이션 루프
-        function animateEcg() {
-            if (!isMeasuring) return;
+        // 실제 카메라 프레임을 읽어와 모세혈관 광 변화(PPG) 분석 루프 실행
+        function processVideoFrame() {
+            if (!isMeasuring || isDemoMode) return;
+
+            const w = canvas.width / window.devicePixelRatio;
+            const h = canvas.height / window.devicePixelRatio;
+
+            // 숨겨진 소형 캔버스에 비디오 프레임 그리기
+            hiddenCtx.drawImage(webcamVideo, 0, 0, 30, 30);
+            
+            try {
+                const imgData = hiddenCtx.getImageData(0, 0, 30, 30);
+                const data = imgData.data;
+
+                let sumR = 0;
+                let sumG = 0;
+                let sumB = 0;
+
+                // 30x30 픽셀 영역 전체의 RGB 총합 계산
+                for (let i = 0; i < data.length; i += 4) {
+                    sumR += data[i];
+                    sumG += data[i + 1];
+                    sumB += data[i + 2];
+                }
+
+                const pixelsCount = data.length / 4;
+                const avgR = sumR / pixelsCount;
+                const avgG = sumG / pixelsCount;
+                const avgB = sumB / pixelsCount;
+
+                // 💡 손가락 밀착 감지 로직
+                // 손가락 끝에 플래시나 밝은 백색광이 들어오면 전체가 짙은 붉은색/선홍색으로 채워짐
+                // 즉, R(빨간색) 성분이 극단적으로 높고 G(초록) 및 B(파랑)가 극히 낮아야 함
+                const isFingerOnCamera = (avgR > 120 && avgR > avgG * 1.6 && avgG < 100);
+
+                if (!isFingerOnCamera) {
+                    consecutiveNoFingerCount++;
+                    if (consecutiveNoFingerCount > 15) { // 약 0.5초 동안 탈착 감지 시
+                        statusMsg.innerHTML = `<span class="text-rose-400 font-bold">손가락을 렌즈에 진하게 대어주세요!</span>`;
+                        // 심박수 및 ECG 표시 리셋 대기
+                        document.getElementById('heartIcon').style.animation = '';
+                        consecutiveNoFingerCount = 15;
+                    }
+                } else {
+                    consecutiveNoFingerCount = 0;
+                    statusMsg.textContent = `맥박 분석 중... (손가락 감지됨)`;
+
+                    // 실시간 빛 흡수도(혈액 관류량 변화) 추적
+                    // 심장이 뛰면 혈액이 가득 차면서 더 많은 녹색광을 흡수하고 붉은색 강도에도 미세한 파동이 발생함
+                    const rawValue = avgR;
+
+                    // 디지털 1차 저주파 통과 필터 (노이즈 정제)
+                    smoothedValue = smoothedValue * 0.82 + rawValue * 0.18;
+                    // 느린 광원 흔들림 제거용 기저선 연산
+                    dcValue = dcValue * 0.985 + smoothedValue * 0.015;
+
+                    // 순수 파형 맥박 신호 분리
+                    const pulseSignal = smoothedValue - dcValue;
+
+                    // ECG 파형 그리기 그리드 처리
+                    ctx.clearRect(0, 0, w, h);
+                    
+                    // 그리드 배경 그리기
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.04)';
+                    ctx.lineWidth = 0.5;
+                    for (let x = 0; x < w; x += 15) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, h);
+                        ctx.stroke();
+                    }
+                    for (let y = 0; y < h; y += 15) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(w, y);
+                        ctx.stroke();
+                    }
+
+                    // 캔버스 우측에 새 데이터 포인트 추가
+                    // 진폭 확대 배율 처리
+                    const yPosition = h / 2 + (pulseSignal * 15);
+                    points.push({ x: w - 20, y: yPosition });
+
+                    if (points.length > w) {
+                        points.shift();
+                    }
+
+                    // 동적 선 연결 그리기
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+                    ctx.lineWidth = 2.4;
+                    ctx.shadowBlur = 4;
+                    ctx.shadowColor = 'rgba(239, 68, 68, 0.8)';
+                    ctx.beginPath();
+
+                    for (let i = 0; i < points.length; i++) {
+                        points[i].x -= 1.8;
+                        if (i === 0) {
+                            ctx.moveTo(points[i].x, points[i].y);
+                        } else {
+                            ctx.lineTo(points[i].x, points[i].y);
+                        }
+                    }
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+
+                    // 💓 실시간 Peak Detection (심박수 피크 감지 알고리즘)
+                    const now = performance.now();
+                    const triggerThreshold = 0.4; // 임계 진폭 초과 시
+                    
+                    if (pulseSignal > triggerThreshold && (now - lastBeatTime) > 380) { // 빈맥 제한 맥스 약 160BPM 대기
+                        const ibi = now - lastBeatTime; // 심박 사이 간격 (Inter-Beat Interval)
+                        lastBeatTime = now;
+
+                        if (ibi > 0) {
+                            const calculatedBpm = Math.round(60000 / ibi);
+                            // 신체 생리학적 정상 한계치 내 검증 필터
+                            if (calculatedBpm >= 40 && calculatedBpm <= 160) {
+                                bpmList.push(calculatedBpm);
+                                if (bpmList.length > 5) bpmList.shift();
+
+                                // 롤링 평균값 계산으로 부드럽게 BPM 갱신
+                                const finalAvgBpm = Math.round(bpmList.reduce((a, b) => a + b, 0) / bpmList.length);
+                                bpmValue.textContent = finalAvgBpm;
+                                lastBpm = finalAvgBpm;
+                                updateStateBadge(finalAvgBpm);
+
+                                // 맥박에 맞춘 심장 애니메이션 싱크 적용
+                                const beatRate = 60 / finalAvgBpm;
+                                document.getElementById('heartIcon').style.animation = `heartBeat ${beatRate}s infinite`;
+                                document.getElementById('heartIcon').className = "fa-solid fa-heart text-6xl text-red-500 pulse-heart";
+                            }
+                        }
+                    }
+                }
+
+            } catch (err) {
+                console.error("Frame read error", err);
+            }
+
+            animationFrameId = requestAnimationFrame(processVideoFrame);
+        }
+
+        // 동적 가상 ECG 애니메이션 루프 (데모/가상 모드 작동용)
+        function animateDemoEcg() {
+            if (!isMeasuring || !isDemoMode) return;
 
             const w = canvas.width / window.devicePixelRatio;
             const h = canvas.height / window.devicePixelRatio;
@@ -533,24 +718,23 @@
                 ctx.stroke();
             }
 
-            // 새로운 포인트 계산 및 적재
+            // 새로운 가상 포인트 적재
             ecgX++;
-            const newY = h / 2 + generateEcgPoint(ecgX, lastBpm);
+            const newY = h / 2 + generateDemoEcgPoint(ecgX, lastBpm);
             points.push({ x: w - 20, y: newY });
 
             if (points.length > w) {
                 points.shift();
             }
 
-            // 포인트들 이동 연산 및 드로잉
-            ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+            ctx.strokeStyle = 'rgba(99, 102, 241, 0.85)'; // 가상 데모 상태는 인디고 블루 색상으로 분리 표기
             ctx.lineWidth = 2.2;
             ctx.shadowBlur = 4;
-            ctx.shadowColor = 'rgba(239, 68, 68, 0.8)';
+            ctx.shadowColor = 'rgba(99, 102, 241, 0.8)';
             ctx.beginPath();
 
             for (let i = 0; i < points.length; i++) {
-                points[i].x -= 1.8; // 프레임 속도에 맞춰 자연스럽게 스크롤링
+                points[i].x -= 1.8;
                 if (i === 0) {
                     ctx.moveTo(points[i].x, points[i].y);
                 } else {
@@ -558,9 +742,9 @@
                 }
             }
             ctx.stroke();
-            ctx.shadowBlur = 0; // 그림자 초기화
+            ctx.shadowBlur = 0;
 
-            animationFrameId = requestAnimationFrame(animateEcg);
+            animationFrameId = requestAnimationFrame(animateDemoEcg);
         }
 
         // 측정 제어 처리
@@ -573,7 +757,6 @@
         const measuringText = document.getElementById('measuringText');
         const cameraFlash = document.getElementById('cameraFlash');
 
-        // 메인 동작 리스너
         btnAction.addEventListener('click', toggleMeasurement);
         heartContainer.addEventListener('click', toggleMeasurement);
 
@@ -581,66 +764,109 @@
             if (isMeasuring) {
                 stopMeasurement(false);
             } else {
-                demoAutoTag = "휴식 중"; // 수동 시작 시 기본 태그
+                isDemoMode = false; // 수동으로 시작하면 데모를 취소하고 실제 감지 시도
+                demoAutoTag = "휴식 중";
                 startMeasurement();
             }
         }
 
-        function startMeasurement() {
+        async function startMeasurement() {
             isMeasuring = true;
             measurementProgress = 0;
             points = [];
+            bpmList = [];
             ecgX = 0;
+            consecutiveNoFingerCount = 0;
 
-            // UI 상태 변경
+            // UI 변경
             btnAction.innerHTML = `<i data-lucide="square" class="w-5 h-5 fill-current"></i><span>중단하기</span>`;
             lucide.createIcons();
             btnAction.classList.replace('from-red-600', 'from-slate-700');
             btnAction.classList.replace('to-rose-500', 'to-slate-600');
             btnSave.disabled = true;
 
-            // 카메라 가상 플래시 활성화
-            cameraFlash.classList.replace('bg-red-600/10', 'bg-red-500');
+            // 카메라 가상 플래시 UI 활성화
+            cameraFlash.classList.replace('bg-red-600/25', 'bg-red-500');
             cameraFlash.classList.add('glow-red');
 
-            // 심장 애니메이션 속도를 BPM에 맞춰 가변적으로 제어
-            const beatDuration = 60 / lastBpm; // 심박 한 주기당 초단위
-            heartIcon.style.animation = `heartBeat ${beatDuration}s infinite`;
-            heartIcon.className = "fa-solid fa-heart text-6xl text-red-500 pulse-heart";
-            
+            heartIcon.className = "fa-solid fa-heart text-6xl text-red-500";
             heartContainer.classList.add('border-red-500/50');
             document.getElementById('heartBackGlow').classList.replace('opacity-0', 'opacity-100');
-            measuringText.textContent = "측정 중...";
+            measuringText.textContent = "감지 시작";
             measuringText.className = "absolute bottom-6 text-[11px] font-bold tracking-widest text-red-400 uppercase animate-pulse";
 
-            // 시뮬레이션 측정 루프 (기능적 변화 시각화)
-            measureInterval = setInterval(() => {
-                measurementProgress += 5;
-                if (measurementProgress <= 100) {
-                    // 미세한 심박 흔들림 보정을 적용하여 실감나게 구성
-                    const flux = Math.floor(Math.random() * 5) - 2; 
-                    const displayBpm = lastBpm + flux;
-                    bpmValue.textContent = displayBpm;
-                    statusMsg.textContent = `맥박 분석 중... ${measurementProgress}% 완료`;
-                } else {
-                    stopMeasurement(true);
-                }
-            }, 150);
+            // 실제 카메라 구동 또는 가상 시뮬레이션 분기 작동
+            if (!isDemoMode && streamActive) {
+                statusMsg.textContent = "손가락 밀착 감지 대기 중...";
+                bpmValue.textContent = "--";
 
-            // 실시간 애니메이션 가동
-            animateEcg();
+                // 가상 플래시(실제 모바일 토치 켜기 지원 시도)
+                try {
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    await videoTrack.applyConstraints({
+                        advanced: [{ torch: true }]
+                    });
+                } catch (e) {
+                    console.log("Torch activation not supported in this browser.");
+                }
+
+                // 8초 후 자동 타이머 마감 완료 루프 기동
+                measureInterval = setInterval(() => {
+                    // 손가락이 이탈하지 않고 유지되고 있는 경우에만 완료율이 진전됨
+                    if (consecutiveNoFingerCount < 10) {
+                        measurementProgress += 10;
+                    }
+                    if (measurementProgress >= 100) {
+                        stopMeasurement(true);
+                    }
+                }, 800);
+
+                processVideoFrame(); // 실제 혈액 흐름 감동 루프 시작
+
+            } else {
+                // 데모 모드 (가상 시뮬레이션 작동)
+                isDemoMode = true; 
+                statusMsg.textContent = "데모 시뮬레이션 가동 중...";
+                
+                const beatDuration = 60 / lastBpm;
+                heartIcon.style.animation = `heartBeat ${beatDuration}s infinite`;
+                heartIcon.className = "fa-solid fa-heart text-6xl text-indigo-500 pulse-heart";
+
+                measureInterval = setInterval(() => {
+                    measurementProgress += 5;
+                    if (measurementProgress <= 100) {
+                        const flux = Math.floor(Math.random() * 5) - 2;
+                        bpmValue.textContent = lastBpm + flux;
+                        statusMsg.textContent = `가상 혈류 추적 분석 중... ${measurementProgress}%`;
+                    } else {
+                        stopMeasurement(true);
+                    }
+                }, 150);
+
+                animateDemoEcg();
+            }
         }
 
-        function stopMeasurement(isComplete = false) {
+        async function stopMeasurement(isComplete = false) {
             isMeasuring = false;
             clearInterval(measureInterval);
             cancelAnimationFrame(animationFrameId);
 
-            // 플래시 끄기
-            cameraFlash.classList.replace('bg-red-500', 'bg-red-600/10');
+            // 가상 플래시(실제 모바일 토치 끄기 지원 시도)
+            if (streamActive && localStream) {
+                try {
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    await videoTrack.applyConstraints({
+                        advanced: [{ torch: false }]
+                    });
+                } catch (e) {}
+            }
+
+            // 플래시 UI 끄기
+            cameraFlash.classList.replace('bg-red-500', 'bg-red-600/25');
             cameraFlash.classList.remove('glow-red');
 
-            // 버튼 및 하트 UI 초기 상태 복구
+            // UI 원복
             btnAction.innerHTML = `<i data-lucide="play" class="w-5 h-5 fill-current"></i><span>측정 시작</span>`;
             lucide.createIcons();
             btnAction.classList.replace('from-slate-700', 'from-red-600');
@@ -654,11 +880,10 @@
             measuringText.className = "absolute bottom-6 text-[11px] font-bold tracking-widest text-slate-500 uppercase";
 
             if (isComplete) {
-                statusMsg.textContent = "측정 완료! 결과를 저장해 보세요.";
+                statusMsg.textContent = "성공적으로 포착되었습니다. 결과를 저장해 보세요.";
                 btnSave.disabled = false;
                 btnSave.className = "px-4 bg-red-500/10 text-red-500 border border-red-500/30 font-semibold rounded-xl transition-all hover:bg-red-500/20";
-                // 측정 성공 후 획득한 최종 결과 고정
-                lastBpm = parseInt(bpmValue.textContent);
+                lastBpm = parseInt(bpmValue.textContent) || lastBpm;
             } else {
                 bpmValue.textContent = "--";
                 statusMsg.textContent = "측정이 취소되었습니다.";
@@ -679,11 +904,8 @@
 
         btnSaveTrigger.addEventListener('click', () => {
             modalBpm.textContent = bpmValue.textContent;
-            
-            // 데모 세팅으로 측정 완료 시 해당 상태를 기본 활성화해 둠
             selectedState = demoAutoTag;
             applySelectedTagUI(selectedState);
-
             saveModal.classList.remove('hidden');
         });
 
@@ -691,7 +913,6 @@
             saveModal.classList.add('hidden');
         });
 
-        // 특정 상태 태그 선택 UI 적용
         function applySelectedTagUI(stateText) {
             const btns = {
                 "휴식 중": "btn-tag-rest",
@@ -708,7 +929,6 @@
             document.getElementById(activeId).className = "py-2 px-3 text-xs font-medium rounded-lg bg-red-600 text-white border border-red-500";
         }
 
-        // 상태 선택 이벤트 위임
         stateSelector.addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON') {
                 const targetState = e.target.getAttribute('data-state');
@@ -733,13 +953,11 @@
             saveModal.classList.add('hidden');
             updateHistoryUI();
             
-            // 토스트 메시지 알림 시뮬레이션
             statusMsg.textContent = "성공적으로 저장되었습니다.";
             btnSave.disabled = true;
             btnSave.className = "px-4 bg-slate-800 text-slate-400 border border-slate-700/50 font-semibold rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed";
         });
 
-        // 히스토리 UI 동적 그리기
         function updateHistoryUI() {
             const historyList = document.getElementById('historyList');
             const totalRecordsSpan = document.getElementById('totalRecords');
@@ -753,7 +971,6 @@
                 return;
             }
 
-            // 평균 계산
             const sum = records.reduce((acc, curr) => acc + curr.bpm, 0);
             avgBpmSpan.textContent = Math.round(sum / records.length);
 
@@ -762,7 +979,6 @@
                 const itemDiv = document.createElement('div');
                 itemDiv.className = "bg-slate-950 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between";
                 
-                // 심박 수치 컬러 판별
                 let textCol = "text-emerald-400";
                 if (item.bpm > 100) textCol = "text-amber-500";
                 else if (item.bpm < 60) textCol = "text-blue-400";
@@ -783,7 +999,6 @@
             });
         }
 
-        // 모든 기록 제거
         document.getElementById('btnClearLogs').addEventListener('click', () => {
             if (records.length > 0) {
                 records = [];
@@ -836,17 +1051,13 @@
 
         function updateChart() {
             if (!trendsChart) return;
-
-            // 기록 중 최근 7개만 정렬하여 노출
             const sliceRecords = [...records].slice(0, 7).reverse();
             const labels = sliceRecords.map(r => r.time);
             const data = sliceRecords.map(r => r.bpm);
-
             trendsChart.data.labels = labels;
             trendsChart.data.datasets[0].data = data;
             trendsChart.update();
         }
-
 
         // --- 탭 3: 호흡(Relax) 가이드 제어 시스템 ---
         const btnBreatheToggle = document.getElementById('btnBreatheToggle');
@@ -885,32 +1096,31 @@
         }
 
         function runBreathePhase() {
-            // 모든 단계 시각 효과 초기화
             const steps = ['inhale', 'hold1', 'exhale', 'hold2'];
             steps.forEach(s => document.getElementById(`step-${s}`).className = "p-2 rounded-lg bg-slate-800/40 border border-slate-700/30");
 
             breatheTimer.textContent = `${breatheCount}초`;
 
             switch(breatheStep) {
-                case 0: // 들이쉬기 (Inhale)
+                case 0:
                     breatheActionText.textContent = "들이쉬기";
                     breatheActionText.className = "text-xl font-extrabold text-emerald-400";
                     breatheIndicator.className = "w-52 h-52 rounded-full bg-emerald-500/20 border-4 border-emerald-500/80 flex flex-col items-center justify-center transition-all duration-[4000ms] ease-in-out glow-green";
                     document.getElementById('step-inhale').className = "p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/40 text-emerald-300";
                     break;
-                case 1: // 참기 (Hold)
+                case 1:
                     breatheActionText.textContent = "멈추기";
                     breatheActionText.className = "text-xl font-extrabold text-amber-400";
                     breatheIndicator.className = "w-52 h-52 rounded-full bg-amber-500/10 border-4 border-amber-500/50 flex flex-col items-center justify-center transition-all duration-[100ms] ease-in-out";
                     document.getElementById('step-hold1').className = "p-2 rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-300";
                     break;
-                case 2: // 내쉬기 (Exhale)
+                case 2:
                     breatheActionText.textContent = "내쉬기";
                     breatheActionText.className = "text-xl font-extrabold text-blue-400";
                     breatheIndicator.className = "w-36 h-36 rounded-full bg-blue-500/15 border-4 border-blue-500/80 flex flex-col items-center justify-center transition-all duration-[4000ms] ease-in-out";
                     document.getElementById('step-exhale').className = "p-2 rounded-lg bg-blue-500/10 border border-blue-500/40 text-blue-300";
                     break;
-                case 3: // 참기 (Hold)
+                case 3:
                     breatheActionText.textContent = "멈추기";
                     breatheActionText.className = "text-xl font-extrabold text-amber-400";
                     breatheIndicator.className = "w-36 h-36 rounded-full bg-amber-500/10 border-4 border-amber-500/50 flex flex-col items-center justify-center transition-all duration-[100ms] ease-in-out";
@@ -923,19 +1133,16 @@
             isBreathing = false;
             clearInterval(breatheInterval);
             
-            // 버튼 상태 원복
             btnBreatheToggle.innerHTML = `<i data-lucide="wind" class="w-5 h-5"></i><span>호흡 가이드 시작</span>`;
             lucide.createIcons();
             btnBreatheToggle.classList.replace('bg-slate-700', 'bg-emerald-600');
             btnBreatheToggle.classList.replace('hover:bg-slate-600', 'hover:bg-emerald-500');
 
-            // 인디케이터 상태 원복
             breatheActionText.textContent = "준비";
             breatheActionText.className = "text-xl font-extrabold text-emerald-400";
             breatheTimer.textContent = "4초";
             breatheIndicator.className = "w-44 h-44 rounded-full bg-emerald-500/10 border-4 border-emerald-500/30 flex flex-col items-center justify-center";
             
-            // 모든 하이라이트 지우기
             const steps = ['inhale', 'hold1', 'exhale', 'hold2'];
             steps.forEach(s => document.getElementById(`step-${s}`).className = "p-2 rounded-lg bg-slate-800/40 border border-slate-700/30");
         }
